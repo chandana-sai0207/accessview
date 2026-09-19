@@ -18,9 +18,6 @@ const WASM_URL =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-audio/wasm";
 
 const ignoredSounds = [
-  "Speech",
-  "Conversation",
-  "Narration",
   "Music",
   "Singing",
   "Silence",
@@ -60,6 +57,16 @@ export default function SoundDetector() {
       return classifierRef.current;
     }
 
+    // Suppress the harmless TFLite XNNPACK startup log
+    const originalConsoleError = console.error;
+    console.error = (...args: any[]) => {
+      const message = args[0]?.toString() || "";
+      if (message.includes("XNNPACK delegate")) {
+        return;
+      }
+      originalConsoleError(...args);
+    };
+
     const audioFileset =
       await FilesetResolver.forAudioTasks(WASM_URL);
 
@@ -76,6 +83,8 @@ export default function SoundDetector() {
           scoreThreshold: 0.35,
         }
       );
+
+    console.error = originalConsoleError;
 
     classifierRef.current = classifier;
 
