@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
+import { useLanguage } from "../context/LanguageContext";
+import { translations } from "../translations/ui";
+import { translateText } from "../utils/translate";
 
 type Language = {
   code: string;
@@ -8,177 +16,78 @@ type Language = {
   speechCode: string;
 };
 
-type Caption = {
+type Speaker = "Person A" | "Person B";
+
+type Message = {
   id: number;
-  speaker: "Person A" | "Person B";
+  speaker: Speaker;
   originalText: string;
   translatedText: string;
   time: string;
 };
 
 const LANGUAGES: Language[] = [
-  {
-    code: "en",
-    name: "English",
-    speechCode: "en-US",
-  },
-  {
-    code: "te",
-    name: "తెలుగు",
-    speechCode: "te-IN",
-  },
-  {
-    code: "hi",
-    name: "हिन्दी",
-    speechCode: "hi-IN",
-  },
-  {
-    code: "ta",
-    name: "தமிழ்",
-    speechCode: "ta-IN",
-  },
-  {
-    code: "ml",
-    name: "മലയാളം",
-    speechCode: "ml-IN",
-  },
-  {
-    code: "mr",
-    name: "मराठी",
-    speechCode: "mr-IN",
-  },
-  {
-    code: "bn",
-    name: "বাংলা",
-    speechCode: "bn-IN",
-  },
+  { code: "en", name: "English", speechCode: "en-US" },
+  { code: "te", name: "తెలుగు", speechCode: "te-IN" },
+  { code: "hi", name: "हिन्दी", speechCode: "hi-IN" },
+  { code: "ta", name: "தமிழ்", speechCode: "ta-IN" },
+  { code: "ml", name: "മലയാളം", speechCode: "ml-IN" },
+  { code: "mr", name: "मराठी", speechCode: "mr-IN" },
+  { code: "bn", name: "বাংলা", speechCode: "bn-IN" },
 ];
 
 const STORAGE_KEY = "accessview-reminders";
 
 export default function Conversation() {
-  const [spokenLanguage, setSpokenLanguage] =
-    useState("en");
+  const { language } = useLanguage();
 
-  const [targetLanguage, setTargetLanguage] =
-    useState("te");
+  const ui = translations[language] as Record<string, string>;
 
-  const [isListening, setIsListening] =
-    useState(false);
+  const text = (key: string, fallback: string) => {
+    return ui[key] ?? fallback;
+  };
 
-  const [interimText, setInterimText] =
-    useState("");
+  /*
+   * These are Conversation-only languages.
+   * They are NOT connected to the global UI language.
+   */
+  const [spokenLanguage, setSpokenLanguage] = useState("en");
+  const [targetLanguage, setTargetLanguage] = useState("te");
+  const [currentSpeaker, setCurrentSpeaker] = useState<Speaker>("Person A");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isListening, setIsListening] = useState(false);
+  const [error, setError] = useState("");
 
-  const [currentCaption, setCurrentCaption] =
-    useState("");
-
-  const [currentTranslation, setCurrentTranslation] =
-    useState("");
-
-  const [captions, setCaptions] =
-    useState<Caption[]>([]);
-
-  const [conversationMode, setConversationMode] =
-    useState(false);
-
-  const [currentSpeaker, setCurrentSpeaker] =
-    useState<"Person A" | "Person B">(
-      "Person A"
-    );
-
-  const [error, setError] =
-    useState("");
-
-  const recognitionRef =
-    useRef<any>(null);
-
-  const shouldListenRef =
-    useRef(false);
-
-  const spokenLanguageRef =
-    useRef(spokenLanguage);
-
-  const targetLanguageRef =
-    useRef(targetLanguage);
-
-  const currentSpeakerRef =
-    useRef<"Person A" | "Person B">(
-      currentSpeaker
-    );
+  const recognitionRef = useRef<any>(null);
+  const shouldListenRef = useRef(false);
+  const spokenLanguageRef = useRef(spokenLanguage);
+  const targetLanguageRef = useRef(targetLanguage);
+  const currentSpeakerRef = useRef<Speaker>("Person A");
 
   useEffect(() => {
-    spokenLanguageRef.current =
-      spokenLanguage;
+    spokenLanguageRef.current = spokenLanguage;
   }, [spokenLanguage]);
 
   useEffect(() => {
-    targetLanguageRef.current =
-      targetLanguage;
+    targetLanguageRef.current = targetLanguage;
   }, [targetLanguage]);
 
   useEffect(() => {
-    currentSpeakerRef.current =
-      currentSpeaker;
+    currentSpeakerRef.current = currentSpeaker;
   }, [currentSpeaker]);
 
-  const getLanguage = (
-    code: string
-  ) => {
-    return LANGUAGES.find(
-      (language) =>
-        language.code === code
-    );
+  const getLanguage = (code: string) => {
+    return LANGUAGES.find((item) => item.code === code);
   };
 
-  const translateText = async (
-    text: string,
-    from: string,
-    to: string
-  ) => {
-    if (!text.trim()) {
-      return "";
-    }
+  const saveReminder = (message: string) => {
+    const cleanText = message.trim();
 
-    if (from === to) {
-      return text;
-    }
-
-    try {
-      const response =
-        await fetch(
-          `https://api.mymemory.translated.net/get?q=${encodeURIComponent(
-            text
-          )}&langpair=${from}|${to}`
-        );
-
-      const data =
-        await response.json();
-
-      return (
-        data?.responseData
-          ?.translatedText || text
-      );
-    } catch (translationError) {
-      console.error(
-        "Translation error:",
-        translationError
-      );
-
-      return text;
-    }
-  };
-
-  const saveReminder = (
-    text: string
-  ) => {
-    if (!text.trim()) {
+    if (!cleanText) {
       return;
     }
 
-    const existing =
-      localStorage.getItem(
-        STORAGE_KEY
-      );
+    const existing = localStorage.getItem(STORAGE_KEY);
 
     let reminders: {
       id: number;
@@ -188,8 +97,7 @@ export default function Conversation() {
 
     if (existing) {
       try {
-        const parsed =
-          JSON.parse(existing);
+        const parsed = JSON.parse(existing);
 
         if (Array.isArray(parsed)) {
           reminders = parsed;
@@ -201,68 +109,50 @@ export default function Conversation() {
 
     reminders.push({
       id: Date.now(),
-      text,
-      createdAt:
-        new Date().toLocaleString(),
+      text: cleanText,
+      createdAt: new Date().toLocaleString(),
     });
 
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify(reminders)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(reminders));
+
+    window.alert(
+      text("reminderAdded", "Reminder added successfully.")
     );
   };
 
-  const addCaption = async (
-    text: string
-  ) => {
-    if (!text.trim()) {
+  const addMessage = async (messageText: string) => {
+    const cleanText = messageText.trim();
+
+    if (!cleanText) {
       return;
     }
 
-    const from =
-      spokenLanguageRef.current;
+    const from = spokenLanguageRef.current;
+    const to = targetLanguageRef.current;
+    const speaker = currentSpeakerRef.current;
 
-    const to =
-      targetLanguageRef.current;
+    const translatedText = await translateText(cleanText, from, to);
 
-    const translated =
-      await translateText(
-        text,
-        from,
-        to
-      );
-
-    const newCaption: Caption = {
+    const newMessage: Message = {
       id: Date.now(),
-
-      speaker:
-        currentSpeakerRef.current,
-
-      originalText: text,
-
-      translatedText: translated,
-
-      time: new Date().toLocaleTimeString(
-        [],
-        {
-          hour: "2-digit",
-          minute: "2-digit",
-        }
-      ),
+      speaker,
+      originalText: cleanText,
+      translatedText,
+      time: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
     };
 
-    setCaptions(
-      (previous) => [
-        newCaption,
-        ...previous,
-      ]
-    );
+    setMessages((previous) => [...previous, newMessage]);
 
-    setCurrentCaption(text);
-
-    setCurrentTranslation(
-      translated
-    );
+    /*
+     * IMPORTANT:
+     * We do NOT automatically switch speakers.
+     *
+     * The selected Person A / Person B button
+     * remains active until the user changes it.
+     */
   };
 
   const startListening = () => {
@@ -270,86 +160,83 @@ export default function Conversation() {
 
     const SpeechRecognition =
       typeof window !== "undefined"
-        ? (window as any)
-            .SpeechRecognition ||
-          (window as any)
-            .webkitSpeechRecognition
+        ? (window as any).SpeechRecognition ||
+          (window as any).webkitSpeechRecognition
         : null;
 
     if (!SpeechRecognition) {
       setError(
-        "Speech recognition is not supported in this browser. Please use Google Chrome or Microsoft Edge."
+        text(
+          "speechRecognitionUnsupported",
+          "Speech recognition is not supported in this browser. Please use Google Chrome or Microsoft Edge."
+        )
       );
 
       return;
     }
 
-    const recognition =
-      new SpeechRecognition();
+    const recognition = new SpeechRecognition();
 
     recognition.continuous = true;
-
     recognition.interimResults = true;
 
     recognition.lang =
-      spokenLanguageRef.current ===
-      "en"
-        ? "en-US"
-        : getLanguage(
-            spokenLanguageRef.current
-          )?.speechCode ||
-          "en-US";
+      getLanguage(spokenLanguageRef.current)?.speechCode || "en-US";
 
     recognition.onstart = () => {
       setIsListening(true);
+      setError("");
     };
 
-    recognition.onresult = async (
-      event: any
-    ) => {
-      let interim = "";
+    recognition.onresult = async (event: any) => {
+      let finalText = "";
 
-      for (
-        let i = event.resultIndex;
-        i < event.results.length;
-        i++
-      ) {
-        const transcript =
-          event.results[i][0]
-            .transcript;
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
 
-        if (
-          event.results[i].isFinal
-        ) {
-          await addCaption(
-            transcript.trim()
-          );
-        } else {
-          interim += transcript;
+        if (!result.isFinal) {
+          continue;
         }
+
+        const transcript = result?.[0]?.transcript || "";
+        finalText += transcript;
       }
 
-      setInterimText(interim);
+      if (finalText.trim()) {
+        await addMessage(finalText.trim());
+      }
     };
 
-    recognition.onerror = (
-      event: any
-    ) => {
-      console.error(
-        "Speech recognition error:",
-        event
-      );
+    recognition.onerror = (event: any) => {
+      console.error("Conversation speech error:", event);
 
-      if (
-        event.error ===
-        "not-allowed"
-      ) {
+      if (event.error === "not-allowed") {
         setError(
-          "Microphone permission was denied. Please allow microphone access."
+          text(
+            "microphoneDenied",
+            "Microphone permission was denied. Please allow microphone access."
+          )
+        );
+      } else if (event.error === "no-speech") {
+        setError(
+          text(
+            "noSpeech",
+            "No speech was detected. Please try speaking again."
+          )
+        );
+      } else if (event.error === "network") {
+        setError(
+          text(
+            "speechNetworkError",
+            "Network error occurred during speech recognition."
+          )
         );
       } else {
         setError(
-          "Speech recognition encountered an error."
+          text(
+            "speechError",
+            "Speech recognition encountered an error."
+          )
         );
       }
 
@@ -357,331 +244,191 @@ export default function Conversation() {
     };
 
     recognition.onend = () => {
-      if (
-        shouldListenRef.current
-      ) {
+      if (shouldListenRef.current) {
         try {
           recognition.start();
-        } catch {
-          // Recognition may already be restarting.
+        } catch (restartError) {
+          console.error("Could not restart recognition:", restartError);
         }
       } else {
         setIsListening(false);
       }
     };
 
-    recognitionRef.current =
-      recognition;
-
-    shouldListenRef.current =
-      true;
+    recognitionRef.current = recognition;
+    shouldListenRef.current = true;
 
     try {
       recognition.start();
-    } catch (recognitionError) {
-      console.error(
-        recognitionError
-      );
+    } catch (startError) {
+      console.error("Unable to start recognition:", startError);
+
+      shouldListenRef.current = false;
+      setIsListening(false);
 
       setError(
-        "Unable to start speech recognition."
+        text("speechStartError", "Unable to start speech recognition.")
       );
-
-      shouldListenRef.current =
-        false;
-
-      setIsListening(false);
     }
   };
 
   const stopListening = () => {
-    shouldListenRef.current =
-      false;
+    shouldListenRef.current = false;
 
-    if (
-      recognitionRef.current
-    ) {
+    if (recognitionRef.current) {
       recognitionRef.current.stop();
-
-      recognitionRef.current =
-        null;
+      recognitionRef.current = null;
     }
 
     setIsListening(false);
-
-    setInterimText("");
   };
 
-  const switchSpeaker = () => {
-    setCurrentSpeaker(
-      (current) =>
-        current === "Person A"
-          ? "Person B"
-          : "Person A"
-    );
-  };
-
-  const handleSpokenLanguageChange = (
-    value: string
-  ) => {
+  const changeSpokenLanguage = (value: string) => {
     setSpokenLanguage(value);
+    spokenLanguageRef.current = value;
 
     if (isListening) {
       stopListening();
 
-      setTimeout(() => {
+      window.setTimeout(() => {
         startListening();
       }, 300);
     }
   };
 
-  const handleTargetLanguageChange = async (
-    value: string
-  ) => {
+  const changeTargetLanguage = (value: string) => {
     setTargetLanguage(value);
-
-    if (currentCaption) {
-      const translated =
-        await translateText(
-          currentCaption,
-          spokenLanguageRef.current,
-          value
-        );
-
-      setCurrentTranslation(
-        translated
-      );
-    }
+    targetLanguageRef.current = value;
   };
 
   useEffect(() => {
     return () => {
-      shouldListenRef.current =
-        false;
+      shouldListenRef.current = false;
 
-      if (
-        recognitionRef.current
-      ) {
+      if (recognitionRef.current) {
         recognitionRef.current.stop();
+        recognitionRef.current = null;
       }
     };
   }, []);
 
   return (
     <div className="conversation-feature">
-      <div className="conversation-controls">
-        <div className="language-control">
-          <label htmlFor="spoken-language">
-            Spoken Language
-          </label>
-
-          <select
-            id="spoken-language"
-            value={spokenLanguage}
-            onChange={(event) =>
-              handleSpokenLanguageChange(
-                event.target.value
-              )
-            }
-          >
-            {LANGUAGES.map(
-              (language) => (
-                <option
-                  key={language.code}
-                  value={language.code}
-                >
-                  {language.name}
-                </option>
-              )
-            )}
-          </select>
-        </div>
-
-        <div className="language-control">
-          <label htmlFor="target-language">
-            Translate To
-          </label>
-
-          <select
-            id="target-language"
-            value={targetLanguage}
-            onChange={(event) =>
-              handleTargetLanguageChange(
-                event.target.value
-              )
-            }
-          >
-            {LANGUAGES.map(
-              (language) => (
-                <option
-                  key={language.code}
-                  value={language.code}
-                >
-                  {language.name}
-                </option>
-              )
-            )}
-          </select>
-        </div>
-      </div>
-
-      <div className="conversation-mode-panel">
+      <div className="conversation-header">
         <div>
-          <span className="eyebrow">
-            CONVERSATION MODE
-          </span>
-
-          <h3>
-            Two-Person Conversation
-          </h3>
+          <h1>{text("conversation", "Conversation")}</h1>
 
           <p>
-            Switch between Person A and
-            Person B while capturing speech.
+            {text(
+              "conversationSubtitle",
+              "Person-to-person conversation"
+            )}
           </p>
         </div>
 
-        <div className="conversation-mode-actions">
-          <button
-            type="button"
-            className={
-              conversationMode
-                ? "primary-button"
-                : "secondary-button"
-            }
-            onClick={() =>
-              setConversationMode(
-                (current) =>
-                  !current
-              )
-            }
-          >
-            {conversationMode
-              ? "Conversation Mode On"
-              : "Enable Conversation Mode"}
-          </button>
-
-          {conversationMode && (
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={switchSpeaker}
-            >
-              Switch to{" "}
-              {currentSpeaker ===
-              "Person A"
-                ? "Person B"
-                : "Person A"}
-            </button>
-          )}
+        <div className="conversation-mode-control" aria-live="polite">
+          {text("currentSpeaker", "Current speaker")}:{" "}
+          <strong>{currentSpeaker}</strong>
         </div>
       </div>
 
-      {conversationMode && (
-        <div className="speaker-status">
-          <div>
-            <span className="speaker-label">
-              CURRENT SPEAKER
-            </span>
+      <div className="conversation-controls">
+        <div className="language-control">
+          <label htmlFor="conversation-spoken-language">
+            {text("spokenLanguage", "Spoken Language")}
+          </label>
 
-            <strong>
-              {currentSpeaker}
-            </strong>
-          </div>
-
-          <div>
-            <span className="speaker-label">
-              PEOPLE SPEAKING
-            </span>
-
-            <strong>2</strong>
-          </div>
-        </div>
-      )}
-
-      <div className="caption-display">
-        <div className="caption-header">
-          <span className="eyebrow">
-            LIVE CAPTIONS
-          </span>
-
-          <span
-            className={`listening-status ${
-              isListening
-                ? "active"
-                : ""
-            }`}
+          <select
+            id="conversation-spoken-language"
+            value={spokenLanguage}
+            onChange={(event) => changeSpokenLanguage(event.target.value)}
           >
-            <span className="status-dot" />
-
-            {isListening
-              ? "Listening"
-              : "Not listening"}
-          </span>
+            {LANGUAGES.map((item) => (
+              <option key={item.code} value={item.code}>
+                {item.name}
+              </option>
+            ))}
+          </select>
         </div>
 
-        {currentCaption ||
-        interimText ? (
-          <>
-            {conversationMode && (
-              <div className="caption-speaker">
-                {currentSpeaker}
-              </div>
-            )}
+        <div className="language-control">
+          <label htmlFor="conversation-target-language">
+            {text("translationLanguage", "Translation Language")}
+          </label>
 
-            <div className="large-caption">
-              {currentCaption}
+          <select
+            id="conversation-target-language"
+            value={targetLanguage}
+            onChange={(event) => changeTargetLanguage(event.target.value)}
+          >
+            {LANGUAGES.map((item) => (
+              <option key={item.code} value={item.code}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
-              {interimText && (
-                <span className="interim-caption">
-                  {" "}
-                  {interimText}
-                </span>
-              )}
-            </div>
+      <div
+        style={{
+          display: "flex",
+          gap: "12px",
+          flexWrap: "wrap",
+          marginBottom: "20px",
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            currentSpeakerRef.current = "Person A";
+            setCurrentSpeaker("Person A");
+          }}
+          aria-pressed={currentSpeaker === "Person A"}
+          style={{
+            padding: "12px 22px",
+            borderRadius: "999px",
+            border:
+              currentSpeaker === "Person A"
+                ? "2px solid #2563eb"
+                : "1px solid #d1d5db",
+            background:
+              currentSpeaker === "Person A" ? "#2563eb" : "#ffffff",
+            color: currentSpeaker === "Person A" ? "#ffffff" : "#111827",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          Person A
+        </button>
 
-            {currentTranslation && (
-              <div className="translation-caption">
-                {currentTranslation}
-              </div>
-            )}
-
-            {currentCaption && (
-              <button
-                type="button"
-                className="reminder-button"
-                onClick={() =>
-                  saveReminder(
-                    currentTranslation ||
-                      currentCaption
-                  )
-                }
-              >
-                🔔 Reminder
-              </button>
-            )}
-          </>
-        ) : (
-          <div className="caption-placeholder">
-            <div className="caption-placeholder-icon">
-              CC
-            </div>
-
-            <h3>
-              Your live captions will
-              appear here
-            </h3>
-
-            <p>
-              Start listening and speak
-              into the microphone.
-            </p>
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={() => {
+            currentSpeakerRef.current = "Person B";
+            setCurrentSpeaker("Person B");
+          }}
+          aria-pressed={currentSpeaker === "Person B"}
+          style={{
+            padding: "12px 22px",
+            borderRadius: "999px",
+            border:
+              currentSpeaker === "Person B"
+                ? "2px solid #16a34a"
+                : "1px solid #d1d5db",
+            background:
+              currentSpeaker === "Person B" ? "#16a34a" : "#ffffff",
+            color: currentSpeaker === "Person B" ? "#ffffff" : "#111827",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          Person B
+        </button>
       </div>
 
       {error && (
-        <div className="error-message">
+        <div className="conversation-error" role="alert">
           {error}
         </div>
       )}
@@ -690,74 +437,150 @@ export default function Conversation() {
         {!isListening ? (
           <button
             type="button"
-            className="primary-button"
-            onClick={
-              startListening
-            }
+            onClick={startListening}
+            className="conversation-start-button"
           >
-            🎙 Start Listening
+            🎤 {text("startListening", "Start Listening")}
           </button>
         ) : (
           <button
             type="button"
-            className="secondary-button"
-            onClick={
-              stopListening
-            }
+            onClick={stopListening}
+            className="conversation-stop-button"
           >
-            ⏹ Stop Listening
+            ⏹ {text("stopListening", "Stop Listening")}
           </button>
         )}
+
+        <button
+          type="button"
+          onClick={() => {
+            const latest = messages[messages.length - 1];
+
+            if (latest) {
+              saveReminder(latest.originalText);
+            }
+          }}
+          disabled={messages.length === 0}
+          className="conversation-reminder-button"
+        >
+          🔔 {text("saveReminder", "Save as Reminder")}
+        </button>
       </div>
 
-      {captions.length > 0 && (
-        <div className="caption-history">
-          <div className="caption-history-header">
-            <div>
-              <span className="eyebrow">
-                CONVERSATION HISTORY
-              </span>
-
-              <h3>
-                Previous Captions
-              </h3>
-            </div>
-          </div>
-
-          <div className="caption-history-list">
-            {captions.map(
-              (caption) => (
-                <article
-                  key={caption.id}
-                  className="caption-history-item"
-                >
-                  <div className="history-top">
-                    <strong>
-                      {conversationMode
-                        ? caption.speaker
-                        : "Speaker"}
-                    </strong>
-
-                    <span>
-                      {caption.time}
-                    </span>
-                  </div>
-
-                  <p className="history-original">
-                    {caption.originalText}
-                  </p>
-
-                  {caption.translatedText && (
-                    <p className="history-translation">
-                      {caption.translatedText}
-                    </p>
-                  )}
-                </article>
-              )
+      <div
+        style={{
+          marginTop: "24px",
+          minHeight: "420px",
+          maxHeight: "620px",
+          overflowY: "auto",
+          padding: "24px",
+          borderRadius: "18px",
+          background: "#efeae2",
+          border: "1px solid #d9d3ca",
+        }}
+        aria-live="polite"
+        role="log"
+      >
+        {messages.length === 0 ? (
+          <div
+            style={{
+              minHeight: "360px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              textAlign: "center",
+              color: "#6b7280",
+              fontSize: "17px",
+            }}
+          >
+            {text(
+              "noConversation",
+              "No messages yet. Select Person A or Person B and start speaking."
             )}
           </div>
-        </div>
-      )}
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "14px",
+            }}
+          >
+            {messages.map((message) => {
+              const isPersonA = message.speaker === "Person A";
+
+              return (
+                <div
+                  key={message.id}
+                  style={{
+                    display: "flex",
+                    justifyContent: isPersonA ? "flex-start" : "flex-end",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "min(78%, 600px)",
+                      padding: "12px 16px",
+                      borderRadius: isPersonA
+                        ? "18px 18px 18px 4px"
+                        : "18px 18px 4px 18px",
+                      background: isPersonA ? "#ffffff" : "#d9fdd3",
+                      boxShadow: "0 1px 2px rgba(0,0,0,0.12)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: "12px",
+                        marginBottom: "6px",
+                      }}
+                    >
+                      <strong
+                        style={{
+                          color: isPersonA ? "#2563eb" : "#15803d",
+                          fontSize: "14px",
+                        }}
+                      >
+                        {message.speaker}
+                      </strong>
+
+                      <span style={{ color: "#6b7280", fontSize: "12px" }}>
+                        {message.time}
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        fontSize: "17px",
+                        lineHeight: 1.5,
+                        color: "#111827",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {message.originalText}
+                    </div>
+
+                    <div
+                      style={{
+                        marginTop: "8px",
+                        paddingTop: "8px",
+                        borderTop: "1px solid rgba(107,114,128,0.2)",
+                        fontSize: "15px",
+                        lineHeight: 1.5,
+                        color: "#374151",
+                      }}
+                    >
+                      {message.translatedText}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
